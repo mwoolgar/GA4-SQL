@@ -1,0 +1,91 @@
+#StandardSQL
+-- #declare the analysis date
+-- DECLARE date1, date2 STRING;
+-- SET (date1, date2) = ('20210101','20210331');
+
+#StandardSQL
+WITH sales AS(
+SELECT
+items.item_id as item_id
+,SUM(items.quantity) as item_quantity
+,COUNT(event_timestamp) as orders
+,SUM(items.item_revenue) as item_revenue
+FROM(
+SELECT
+event_name, items, event_timestamp
+FROM
+#insert your google analytics project and dataset
+`bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*` AS s,
+UNNEST (items) AS items
+WHERE
+# replace with the desired dates using table suffix
+_table_suffix BETWEEN '20210101' AND '20210131'
+# filter by event_name
+AND event_name = 'purchase'
+# filter by the item_id, name, category
+)
+GROUP BY item_id), 
+
+
+-- ADD TO CARTS
+
+add_to_carts AS(
+SELECT
+items.item_id as item_id
+,items.item_name as item_name
+,COUNT(event_timestamp) as add_to_carts
+-- NEW ADD-IN
+,event_timestamp
+,item_list_index as item_list_index
+
+
+FROM(
+SELECT
+event_name, items, 
+event_timestamp,
+item_list_index
+FROM
+#insert your google analytics project and dataset
+`bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*` as c,
+UNNEST (items) AS items
+WHERE
+# replace with the desired dates using table suffix
+_table_suffix BETWEEN '20210101' AND '20210131'
+# filter by event_name
+AND event_name IN ( 'add_to_cart', 'view_item_list')
+# removing null values altogether
+  AND items.item_list_index IS NOT NULL
+  AND items.item_list_index != '(not set)'
+  AND items.item_list_index != 'null'
+# filter by the item_id, name, category
+--AND items.item_id in ('9180819' , '9195830', '9180865')
+)
+GROUP BY item_id, item_name,event_timestamp,item_list_index)
+
+SELECT
+c.item_id as item_id
+, COUNT(DISTINCT event_timestamp) as view_count
+,ROUND(SUM(CAST(item_list_index as INT64))/COUNT(DISTINCT event_timestamp),2) as avg_product_list_ranking
+,c.item_name as item_name
+,c.add_to_carts as add_to_carts
+,s.orders as orders
+,s.item_revenue as revenue
+,s.orders / c.add_to_carts  as cart_conversion_rate
+,s.item_quantity as total_quantity_ordered
+, s.item_revenue / s.item_quantity as avg_price
+, s.item_quantity  / s.orders as avg_qty
+FROM add_to_carts as c
+JOIN sales as s on s.item_id = c.item_id
+--JOIN item_list il on c.item_id = il.item_id
+GROUP BY c.item_id,c.item_name,c.add_to_carts,s.orders,s.item_revenue,s.item_quantity  
+ORDER BY orders desc
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,60 @@
+
+-- https://stacktonic.com/article/google-analytics-4-and-big-query-create-custom-channel-groupings-in-a-reusable-sql-function
+
+-- https://gist.github.com/krisjan-oldekamp/bad52a06062b09729434ab65091b5393
+
+with
+-- select session in 3 months
+sessions as (
+    select
+        user_pseudo_id as ga_client_id,
+        concat(user_pseudo_id,'.',(select cast(value.int_value as string) from unnest(event_params) where key = 'ga_session_id')) as session_id, -- combine user_pseudo_id and session_id for a unique session-id
+        timestamp_micros(min(event_timestamp)) as session_start,
+        array_agg(
+            if(event_name in('page_view','user_engagement','scroll'), struct(
+                event_timestamp,
+                lower((select value.string_value from unnest(event_params) where key = 'source')) as source,
+                lower((select value.string_value from unnest(event_params) where key = 'medium')) as medium,
+                lower((select value.string_value from unnest(event_params) where key = 'campaign')) as campaign,
+                (select value.int_value from unnest(event_params) where key = 'entrances') as is_entrance,
+                (select value.int_value from unnest(event_params) where key = 'ignore_referrer') as ignore_referrer
+            ), null) 
+        ignore nulls) as channels_in_session,
+        countif(event_name = 'purchase') as conversions,
+        sum(ecommerce.purchase_revenue) as conversion_value
+    from
+        `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+    where
+        _table_suffix BETWEEN '20201101' AND '20210131'
+    group by
+        user_pseudo_id,
+        session_id
+),
+-- get first campaign parameters from session and aggegrated metrics
+traffic_acquisition as (
+    select
+        (select t.source from unnest(channels_in_session) as t where t.ignore_referrer is null order by t.event_timestamp asc limit 1) as source,
+        (select t.medium from unnest(channels_in_session) as t where t.ignore_referrer is null order by t.event_timestamp asc limit 1) as medium,
+        count(distinct session_id) as sessions,
+        sum(conversions) as conversions,
+        ifnull(sum(conversion_value), 0) as conversion_value
+    from
+        sessions
+    group by
+        1, 2
+)
+
+-- map source / medium to channel grouping using a user defined function (ignore campaign)
+select
+    *,
+
+     `milessandbox-233315.udf_library.channel_grouping`(source, medium, null) as channel_grouping
+from
+    traffic_acquisition
+
+
+
+
+
+
+

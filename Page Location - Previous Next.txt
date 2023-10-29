@@ -1,0 +1,79 @@
+-- https://tanelytics.com/ga4-bigquery-cheat-sheet/#extract-url-query-parameters
+
+with events as (
+  select
+    concat(
+      user_pseudo_id,
+      (
+        select
+          value.int_value
+        from
+          unnest(event_params)
+        where
+          key = 'ga_session_id'
+      )
+    ) as unique_session_id,
+    event_name,
+    event_timestamp,
+    regexp_replace(
+  regexp_replace(
+    (
+      select
+        p.value.string_value
+      from
+        unnest(event_params) as p
+      where
+        p.key = 'page_location'
+    ),
+    r'^https?://[^/]+',
+    ''
+  ),
+  r'[\?].*',
+  ''
+) as page_path
+  from
+       `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+)
+select
+  unique_session_id,
+  event_name,
+  page_path,
+  event_timestamp,
+  -- look for the previous page_path
+  if(
+    event_name = 'page_view',
+    coalesce(
+      last_value(
+        if(event_name = 'page_view', page_path, null) ignore nulls
+      ) over(
+        partition by unique_session_id
+        order by
+          event_timestamp asc rows between unbounded preceding
+          and 1 preceding
+      ),
+      '(entrance)'
+    ),
+    null
+  ) as previous_page,
+  -- look for the next page_path
+  if(
+    event_name = 'page_view',
+    coalesce(
+      first_value(
+        if(event_name = 'page_view', page_path, null) ignore nulls
+      ) over(
+        partition by unique_session_id
+        order by
+          event_timestamp asc rows between 1 following
+          and unbounded following
+      ),
+      '(exit)'
+    ),
+    null
+  ) as next_page
+from
+  events
+
+
+
+  

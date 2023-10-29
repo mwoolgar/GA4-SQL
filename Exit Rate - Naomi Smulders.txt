@@ -1,0 +1,71 @@
+
+#  https://naomi-smulders.medium.com/hoe-haal-je-de-exit-rate-op-uit-ga4-bigquery-a8869f44925
+
+
+DECLARE STARTDATE STRING DEFAULT '20210101';
+DECLARE ENDDATE STRING DEFAULT '20210131';
+DECLARE PAGE STRING DEFAULT  'https://shop.googlemerchandisestore.com/store.html'; #'https://shop.googlemerchandisestore.com/Google+Redesign/Apparel';
+
+WITH users_and_page_views AS (
+ SELECT
+   event_timestamp,
+   user_pseudo_id,
+   value.int_value AS session_number,
+   (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location') AS page_url
+ 
+FROM #insert your google analytics project and dataset
+`bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`,
+UNNEST (event_params) as params
+ WHERE event_name =  'page_view' 
+ AND key =  'ga_session_number' --ga_session_id
+-- AND _table_suffix BETWEEN '20210101' AND '20210131'
+),
+
+timestamp_of_last_url_visited_per_session AS (
+ SELECT
+   MAX(event_timestamp) AS last_timestamp,
+   user_pseudo_id,
+   session_number,
+ FROM users_and_page_views
+ GROUP BY user_pseudo_id, session_number
+),
+
+last_visited_url_per_session AS (
+ SELECT DISTINCT
+   timestamp_of_last_url_visited_per_session.last_timestamp,
+   users_and_page_views.user_pseudo_id,
+   users_and_page_views.session_number,
+   users_and_page_views.page_url
+ FROM timestamp_of_last_url_visited_per_session LEFT JOIN users_and_page_views
+ ON timestamp_of_last_url_visited_per_session.user_pseudo_id = users_and_page_views.user_pseudo_id
+   AND timestamp_of_last_url_visited_per_session.last_timestamp = users_and_page_views.event_timestamp
+),
+
+exits_on_page_per_url AS (
+ SELECT
+   page_url,
+   COUNT(*) AS exit_count,
+ FROM last_visited_url_per_session
+ WHERE REGEXP_CONTAINS(page_url, PAGE)
+ GROUP BY page_url
+ ORDER BY page_url
+),
+
+pageviews_per_url AS (
+ SELECT
+   page_url,
+   COUNT(*) AS page_views,
+ FROM users_and_page_views
+ WHERE REGEXP_CONTAINS(page_url, PAGE)
+ GROUP BY page_url
+ ORDER BY page_url
+)
+
+SELECT
+ pageviews_per_url.page_url,
+ pageviews_per_url.page_views,
+ exits_on_page_per_url.exit_count / pageviews_per_url.page_views * 100 AS exit_rate
+FROM pageviews_per_url INNER JOIN exits_on_page_per_url
+ ON pageviews_per_url.page_url = exits_on_page_per_url.page_url
+
+

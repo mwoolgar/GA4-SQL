@@ -1,0 +1,22 @@
+
+-- product list ranking
+SELECT
+  item_id
+  ,item_name
+  , COUNT(DISTINCT event_timestamp) as view_count
+  , ROUND(SUM(CAST(item_list_index as INT64))/COUNT(DISTINCT event_timestamp),2) as avg_list_ranking
+FROM
+        `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`,
+     UNNEST (items) AS items
+WHERE
+  event_name = 'view_item_list'
+  AND         _table_suffix BETWEEN '20201101' AND '20210131'
+
+# removing null values altogether
+  AND items.item_list_index IS NOT NULL
+  AND items.item_list_index != '(not set)'
+  AND items.item_list_index != 'null'
+
+
+GROUP BY item_id, item_name 
+ORDER BY view_count DESC 
