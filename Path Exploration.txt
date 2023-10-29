@@ -1,0 +1,35 @@
+WITH data as (
+  SELECT
+  `milessandbox-233315.udf_library.GA4_parameter_value_and_type`('page_location',event_params).value as starting_point,
+  LEAD ( `milessandbox-233315.udf_library.GA4_parameter_value_and_type`('page_location',event_params).value,
+        1
+      ) OVER session as step_1,
+  LEAD ( `milessandbox-233315.udf_library.GA4_parameter_value_and_type`('page_location', event_params).value,
+        2
+      ) OVER session as step_2,
+  LEAD ( `milessandbox-233315.udf_library.GA4_parameter_value_and_type`('page_location',event_params).value,
+        3
+      ) OVER session as step_3,
+FROM
+  `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+
+WHERE _table_suffix BETWEEN '20210101' AND '20210131'
+AND event_name = 'page_view'
+WINDOW session as (
+  partition by user_pseudo_id, 'ga_session_id'
+  order by event_timestamp ASC
+  )
+
+)
+SELECT 
+*, 
+COUNT(*) AS count
+FROM data
+WHERE
+
+starting_point = 'https://shop.googlemerchandisestore.com/'
+GROUP BY
+starting_point,
+step_1,
+step_2,
+step_3

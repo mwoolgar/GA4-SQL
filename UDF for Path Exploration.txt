@@ -1,0 +1,38 @@
+CREATE OR REPLACE FUNCTION `milessandbox-233315.udf_library.GA4_parameter_value_and_type`(
+  parameter_key_to_be_queried STRING, 
+  event_params ARRAY<STRUCT<key STRING, 
+                            value STRUCT<
+                                        string_value STRING, 
+                                        int_value INT64, 
+                                        float_value FLOAT64, 
+                                        double_value FLOAT64
+                                        >
+                            >
+                    >
+)
+OPTIONS ( 
+  description="Returns a STRUCT with the value (as a string) of a given event parameter and its type. The input is the parameter key and the event_params array. GA4_parameter_value`('name_of_the_param_key', event_params)"
+) 
+AS 
+(
+  (
+    SELECT AS STRUCT
+      COALESCE( value.string_value, 
+                CAST(value.int_value AS STRING), 
+                CAST(value.float_value AS STRING),
+                CAST(value.double_value AS STRING)
+      ) AS value,
+      CASE
+        WHEN value.string_value IS NOT NULL THEN "STRING"
+        WHEN value.int_value IS NOT NULL THEN "INT64"
+        WHEN value.float_value IS NOT NULL THEN "FLOAT64"
+        WHEN value.double_value IS NOT NULL THEN "FLOAT64"
+        ELSE NULL
+      END
+      AS value_type
+    FROM 
+      UNNEST(event_params)
+    WHERE 
+      key = parameter_key_to_be_queried
+  )
+);
