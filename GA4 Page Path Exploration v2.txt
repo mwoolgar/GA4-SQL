@@ -1,0 +1,36 @@
+WITH data as (
+  SELECT
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location') AS starting_point,
+
+  LEAD ( (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location'),
+        1
+      ) OVER session as step_1,
+  LEAD ( (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location'),
+        2
+      ) OVER session as step_2,
+  LEAD ( (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location'),
+        3
+      ) OVER session as step_3,
+FROM
+  `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+
+WHERE _table_suffix BETWEEN '20210101' AND '20210131'
+AND event_name = 'page_view'
+WINDOW session as (
+  partition by user_pseudo_id, 'ga_session_id'
+  order by event_timestamp ASC
+  )
+
+)
+SELECT 
+*, 
+COUNT(*) AS count
+FROM data
+WHERE
+
+starting_point = 'https://shop.googlemerchandisestore.com/'
+GROUP BY
+starting_point,
+step_1,
+step_2,
+step_3
